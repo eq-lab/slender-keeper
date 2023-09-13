@@ -1,7 +1,7 @@
 import { Address, Contract, Server, xdr, scValToBigInt, TransactionBuilder, BASE_FEE, Account, TimeoutInfinite, Keypair } from "soroban-client";
 import { ReserveData, TokenBalance } from "./types";
 import { parseScvToJs } from "./parseScvToJs";
-import { FACTOR, KEEPER_PUB, KEEPER_S, PASSPHRASE, PERCENTAGE_FACTOR, POOL_ID, U128_MAX, XLM_FUTURENET_NATIVE } from "./consts";
+import { FACTOR, KEEPER_PUB, KEEPER_S, PASSPHRASE, PERCENTAGE_FACTOR, POOL_ID, U128_MAX, XLM_NATIVE } from "./consts";
 
 export const getInstanceStorage = async (server: Server, contractId: string) => {
     const ledgerKey = xdr.LedgerKey.contractData(
@@ -106,7 +106,7 @@ export const getTokensFromPool = async (server: Server) => {
                 })
                 .catch((r) => {
                     // TODO: work with expired persistent storage
-                    if (token === XLM_FUTURENET_NATIVE) {
+                    if (token === XLM_NATIVE) {
                         return 7;
                     } else {
                         return 9;
