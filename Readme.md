@@ -2,7 +2,7 @@
 1. `yarn`
 2. `yarn start`
 
-Env (also can be modified in `src/consts.ts`):\
+Env (also can be modified in `src/consts.ts`):
 
 `CONTRACT_CREATION_LEDGER` - ledget at which Slender pool was created\
 `POOL_ID` - Slender pool address\
@@ -12,4 +12,4 @@ Env (also can be modified in `src/consts.ts`):\
 `PASSPHRASE` - Soroban passphrase\
 `KEEPER_PUB` - keeper's account address\
 `KEEPER_S` - keeper's secret\
-`SIMULATE_PUB` - optional; account to get data with simulateTransaction\
+`SIMULATE_PUB` - optional; account to get data with simulateTransaction
