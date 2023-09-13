@@ -10,6 +10,7 @@
     "stellar-sdk": "10.4.1"
   },
   "scripts": {
+    "start": "yarn build & node dist/index.js",
     "dev": "ts-node ./src/index.ts",
     "build": "tsc"
   },
