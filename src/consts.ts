@@ -1,0 +1,14 @@
+export const ONE_YEAR = 31_557_600;
+export const FACTOR = 1_000_000_000;
+export const PERCENTAGE_FACTOR = 10000;
+export const U128_MAX = 340282366920938463463374607431768211455n;
+export const BORROWING_MASK = BigInt(0x55555555555555555555555555555555);
+export const CONTRACT_CREATION_LEDGER = process.env.CONTRACT_CREATION_LEDGER || 849500;
+export const POOL_ID = process.env.POOL_ID || "CAVSCGJKXNS5UW25N4FOC647I2GNQ66N47FND55L6TMDQ7OU5LIMDKGH";
+export const XLM_FUTURENET_NATIVE = process.env.XLM_FUTURENET_NATIVE || "CB64D3G7SM2RTH6JSGG34DDTFTQ5CFDKVDZJZSODMCX4NJ2HV2KN7OHT";
+export const SIMULATE_PUB = process.env.SIMULATE_PUB || "GC2XJ77POM5QG64577NCIY3FT7X23QMT32SUXSNRLGJSD5BF3CJNGD2U";
+export const SOROBAN_URL = process.env.SOROBAN_URL || "https://rpc-futurenet.stellar.org:443";
+export const HORIZON_URL = process.env.HORIZON_URL || "https://horizon-futurenet.stellar.org";
+export const PASSPHRASE = process.env.PASSPHRASE || "Test SDF Future Network ; October 2022";
+export const KEEPER_PUB = process.env.KEEPER_PUB;
+export const KEEPER_S = process.env.KEEPER_S;
