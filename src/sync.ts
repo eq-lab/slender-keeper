@@ -1,7 +1,7 @@
 import { Server, xdr } from "soroban-client";
 import StellarSdk from 'stellar-sdk';
 import {humanizeEvents} from 'stellar-base';
-import { readLastSyncedLedger, insertLastSyncedLedger, insertBorrowers } from "./db";
+import { readLastSyncedLedger, updateLastSyncedLedger, insertBorrowers } from "./db";
 import { CONTRACT_CREATION_LEDGER, HORIZON_URL, POOL_ID } from "./consts";
 
 export const populateDbWithBorrowers = async (server: Server) => {
@@ -20,7 +20,7 @@ export const populateDbWithBorrowers = async (server: Server) => {
                 const borrowersAddresses = events.map(e => e.topics[1]);
                 insertBorrowers(borrowersAddresses);
             }
-            insertLastSyncedLedger(currentLedger);
+            updateLastSyncedLedger(currentLedger);
             currentLedger += 1;
             lastLedger = (await server.getLatestLedger()).sequence;
         }

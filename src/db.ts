@@ -18,8 +18,7 @@ export const readLastSyncedLedger = () => {
     return lastSyncedLedger;
 }
 
-
-export const insertLastSyncedLedger = (lastSyncedLedger: number) => {
+export const updateLastSyncedLedger = (lastSyncedLedger: number) => {
     db.prepare('UPDATE ledger SET last_synced=(?) WHERE rowid=1').run(lastSyncedLedger);
 }
 
