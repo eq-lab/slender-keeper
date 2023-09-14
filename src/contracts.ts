@@ -78,7 +78,7 @@ async function simulateTransaction<T> (server: Server, contractAddress: string, 
 export const getBalance = async (server: Server, token: string, user: string): Promise<bigint> =>
     simulateTransaction(server, token, "balance", Address.fromString(user).toScVal());
 
-export const getAccountPosition = async (server: Server, user: string): Promise<bigint> =>
+export const getAccountPosition = async (server: Server, user: string): Promise<PoolAccountPosition> =>
     simulateTransaction(server, POOL_ID, "account_position", Address.fromString(user).toScVal());
 
 export const getDebtCoeff = async (server: Server, token: string) => {

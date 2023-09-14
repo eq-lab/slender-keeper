@@ -17,6 +17,6 @@ export interface PoolReserveData {
 
 export interface PoolAccountPosition {
     npv: bigint,
-    discounted_collateral_xlm: bigint,
-    total_debt_xlm: bigint
+    debt: bigint
+    discounted_collateral: bigint,
 }

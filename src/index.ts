@@ -21,9 +21,9 @@ async function main() {
             const positionResult = positionsResults[i];
             const user = users[i];
             if (positionResult.status === 'fulfilled') {
-                if (positionResult.value.npv <= 0n) {
+                if (positionResult.value.npv <= 0n && positionResult.value.debt > 0) {
                     borrowersToLiquidate.push(user);
-                } else if (positionResult.value.total_debt_xlm === 0n) {
+                } else if (positionResult.value.debt === 0n) {
                     borrowersToDelete.push(user);
                 }
             }
@@ -70,7 +70,6 @@ async function main() {
             if (abortLiquidation) {
                 continue;
             }
-            abortLiquidation = false;
             liquidations.push(
                 liquidate(server, borrower)
                     .then(() => borrower)
