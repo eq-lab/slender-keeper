@@ -1,7 +1,7 @@
-import { Address, Contract, Server, xdr, scValToBigInt, TransactionBuilder, BASE_FEE, Account, TimeoutInfinite, Keypair } from "soroban-client";
+import { Address, Contract, Server, xdr, scValToBigInt, TransactionBuilder, BASE_FEE, TimeoutInfinite, Keypair } from "soroban-client";
 import { PoolAccountPosition, PoolReserveData, ReserveData } from "./types";
 import { parseScvToJs } from "./parseScvToJs";
-import { LIQUIDATOR_ADDRESS, LIQUIDATOR_SECRET, NETWORK_PASSPHRASE, PERCENTAGE_FACTOR, POOL_ID, U128_MAX, XLM_NATIVE } from "./consts";
+import { LIQUIDATOR_ADDRESS, LIQUIDATOR_SECRET, NETWORK_PASSPHRASE, POOL_ID } from "./consts";
 
 export const getInstanceStorage = async (server: Server, contractId: string) => {
     const ledgerKey = xdr.LedgerKey.contractData(
@@ -61,33 +61,25 @@ export const getPrice = async (server: Server, priceFeed: string, token: string)
     }
 }
 
-export const getBalance = async (server: Server, token: string, user: string): Promise<bigint>  => {
+async function simulateTransaction<T> (server: Server, contractAddress: string, call: string, ...args: xdr.ScVal[]): Promise<T> {
     const account = await server.getAccount(LIQUIDATOR_ADDRESS);
-    const contract = new Contract(token);
+    const contract = new Contract(contractAddress);
     const transaction = new TransactionBuilder(account, {
         fee: BASE_FEE,
         networkPassphrase: NETWORK_PASSPHRASE,
-    }).addOperation(contract.call("balance", Address.fromString(user).toScVal()))
+    }).addOperation(contract.call(call, ...args))
         .setTimeout(TimeoutInfinite)
         .build();
-
+    
     return server.simulateTransaction(transaction)
-        .then(simulateResult => parseScvToJs(simulateResult.result.retval) as bigint);   
+        .then(simulateResult => parseScvToJs(simulateResult.result.retval));
 }
 
-export const getAccountPosition = async (server: Server, user: string): Promise<PoolAccountPosition> => {
-    const account = await server.getAccount(LIQUIDATOR_ADDRESS);
-    const contract = new Contract(POOL_ID);
-    const transaction = new TransactionBuilder(account, {
-        fee: BASE_FEE,
-        networkPassphrase: NETWORK_PASSPHRASE,
-    }).addOperation(contract.call("account_position", Address.fromString(user).toScVal()))
-        .setTimeout(TimeoutInfinite)
-        .build();
+export const getBalance = async (server: Server, token: string, user: string): Promise<bigint> =>
+    simulateTransaction(server, token, "balance", Address.fromString(user).toScVal());
 
-    return server.simulateTransaction(transaction)
-        .then(simulateResult => parseScvToJs(simulateResult.result.retval) as PoolAccountPosition);
-}
+export const getAccountPosition = async (server: Server, user: string): Promise<bigint> =>
+    simulateTransaction(server, POOL_ID, "account_position", Address.fromString(user).toScVal());
 
 export const getDebtCoeff = async (server: Server, token: string) => {
     const account = await server.getAccount(LIQUIDATOR_ADDRESS);
@@ -123,17 +115,4 @@ export const liquidate = async (server: Server, who: string) => {
     transaction.sign(Keypair.fromSecret(LIQUIDATOR_SECRET));
 
     return server.sendTransaction(transaction);
-}
-
-export const getUserConfiguration = (server: Server, user: string) => {
-    const key = xdr.ScVal.scvVec([
-        xdr.ScVal.scvSymbol('UserConfig'),
-        Address.fromString(user).toScVal(),
-    ]);
-    return server.getContractData(POOL_ID, key)
-        .then(result => {
-            const entryData = xdr.LedgerEntryData.fromXDR(result.xdr, 'base64');
-            return scValToBigInt(entryData.contractData().body().data().val());
-        })
-        .catch((reason) => reason.message.includes("Contract data not found") ? U128_MAX : Promise.reject(reason)); // need to be bumped
 }

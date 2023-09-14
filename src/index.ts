@@ -1,10 +1,9 @@
 import {
   Server,
-  Contract
 } from "soroban-client";
 import { populateDbWithBorrowers } from "./sync";
-import { getDebtCoeff, getAccountPosition, getReserves, getBalance, getUserConfiguration, liquidate } from "./contracts";
-import { POOL_PRECISION_FACTOR, POOL_ID, SOROBAN_URL, LIQUIDATOR_ADDRESS, BORROWING_MASK } from "./consts";
+import { getDebtCoeff, getAccountPosition, getReserves, getBalance, liquidate } from "./contracts";
+import { POOL_PRECISION_FACTOR, SOROBAN_URL, LIQUIDATOR_ADDRESS } from "./consts";
 import { readBorrowers, deleteBorrower, deleteBorrowers } from "./db";
 
 async function main() {
