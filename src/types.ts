@@ -1,23 +1,22 @@
 export interface ReserveData {
-    sToken: string,
     debtToken: string,
-    priceFeed: string,
-    discount: bigint,
-    sTokenSupply?: bigint,
-    debtTokenSupply?: bigint,
     sTokenUnderlyingBalance: bigint,
-    decimals: number
 }
 
-export interface TokenBalance {
-    token: string,
-    balance: bigint
+export interface PoolReserveData {
+    configuration: Map<string, number | boolean | bigint>,
+    lender_ar: bigint,
+    lender_ir: bigint,
+    borrower_ar: bigint,
+    borrower_ir: bigint,
+    last_update_timestamp: number,
+    s_token_address: string,
+    debt_token_address: string,
+    id: number[],
 }
 
-export interface Position {
-    collateral: Map<string, TokenBalance>,
-    discountedCollateralXlm: bigint,
-    totalDebtXlm: bigint,
-    debt: Map<string, TokenBalance>,
-    npv: bigint
+export interface PoolAccountPosition {
+    npv: bigint,
+    debt: bigint
+    discounted_collateral: bigint,
 }
