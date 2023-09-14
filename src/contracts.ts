@@ -61,43 +61,14 @@ export const getPrice = async (server: Server, priceFeed: string, token: string)
     }
 }
 
-async function simulateTransaction<T> (server: Server, contractAddress: string, call: string, ...args: xdr.ScVal[]): Promise<T> {
-    const account = await server.getAccount(LIQUIDATOR_ADDRESS);
-    const contract = new Contract(contractAddress);
-    const transaction = new TransactionBuilder(account, {
-        fee: BASE_FEE,
-        networkPassphrase: NETWORK_PASSPHRASE,
-    }).addOperation(contract.call(call, ...args))
-        .setTimeout(TimeoutInfinite)
-        .build();
-    
-    return server.simulateTransaction(transaction)
-        .then(simulateResult => parseScvToJs(simulateResult.result.retval));
-}
-
 export const getBalance = async (server: Server, token: string, user: string): Promise<bigint> =>
-    simulateTransaction(server, token, "balance", Address.fromString(user).toScVal());
+simulateTransaction(server, token, "balance", Address.fromString(user).toScVal());
 
 export const getAccountPosition = async (server: Server, user: string): Promise<PoolAccountPosition> =>
-    simulateTransaction(server, POOL_ID, "account_position", Address.fromString(user).toScVal());
+simulateTransaction(server, POOL_ID, "account_position", Address.fromString(user).toScVal());
 
-export const getDebtCoeff = async (server: Server, token: string) => {
-    const account = await server.getAccount(LIQUIDATOR_ADDRESS);
-    const contract = new Contract(POOL_ID);
-    const tokenAddressScVal = new Contract(token).address().toScVal();
-    const transaction = new TransactionBuilder(account, {
-        fee: BASE_FEE,
-        networkPassphrase: NETWORK_PASSPHRASE,
-    }).addOperation(contract.call("debt_coeff", tokenAddressScVal))
-        .setTimeout(TimeoutInfinite)
-        .build();
-
-    return server.simulateTransaction(transaction)
-        .then(simulateResult => {
-            const debtCoeff = parseScvToJs(simulateResult.result.retval) as bigint;
-            return debtCoeff;
-        });
-}
+export const getDebtCoeff = async (server: Server, token: string): Promise<bigint> =>
+simulateTransaction(server, token, "debt_coeff", new Contract(token).address().toScVal())
 
 export const liquidate = async (server: Server, who: string) => {
     const account = await server.getAccount(LIQUIDATOR_ADDRESS);
@@ -106,13 +77,27 @@ export const liquidate = async (server: Server, who: string) => {
         fee: BASE_FEE,
         networkPassphrase: NETWORK_PASSPHRASE,
     }).addOperation(contract.call("liquidate", Address.fromString(LIQUIDATOR_ADDRESS).toScVal(), Address.fromString(who).toScVal(), xdr.ScVal.scvBool(false)))
-        .setTimeout(TimeoutInfinite)
-        .build();
+    .setTimeout(TimeoutInfinite)
+    .build();
     const transaction = await server.prepareTransaction(
         operation,
         process.env.PASSPHRASE);
-
-    transaction.sign(Keypair.fromSecret(LIQUIDATOR_SECRET));
-
-    return server.sendTransaction(transaction);
-}
+        
+        transaction.sign(Keypair.fromSecret(LIQUIDATOR_SECRET));
+        
+        return server.sendTransaction(transaction);
+    }
+    
+    async function simulateTransaction<T> (server: Server, contractAddress: string, call: string, ...args: xdr.ScVal[]): Promise<T> {
+        const account = await server.getAccount(LIQUIDATOR_ADDRESS);
+        const contract = new Contract(contractAddress);
+        const transaction = new TransactionBuilder(account, {
+            fee: BASE_FEE,
+            networkPassphrase: NETWORK_PASSPHRASE,
+        }).addOperation(contract.call(call, ...args))
+            .setTimeout(TimeoutInfinite)
+            .build();
+        
+        return server.simulateTransaction(transaction)
+            .then(simulateResult => parseScvToJs(simulateResult.result.retval));
+    }
