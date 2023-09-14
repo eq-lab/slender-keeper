@@ -1,7 +1,7 @@
 import { Address, Contract, Server, xdr, scValToBigInt, TransactionBuilder, BASE_FEE, Account, TimeoutInfinite, Keypair } from "soroban-client";
-import { ReserveData, TokenBalance } from "./types";
+import { PoolAccountPosition, PoolReserveData, ReserveData } from "./types";
 import { parseScvToJs } from "./parseScvToJs";
-import { FACTOR, KEEPER_PUB, KEEPER_S, PASSPHRASE, PERCENTAGE_FACTOR, POOL_ID, U128_MAX, XLM_NATIVE } from "./consts";
+import { LIQUIDATOR_ADDRESS, LIQUIDATOR_SECRET, NETWORK_PASSPHRASE, PERCENTAGE_FACTOR, POOL_ID, U128_MAX, XLM_NATIVE } from "./consts";
 
 export const getInstanceStorage = async (server: Server, contractId: string) => {
     const ledgerKey = xdr.LedgerKey.contractData(
@@ -17,102 +17,32 @@ export const getInstanceStorage = async (server: Server, contractId: string) => 
     return (poolInstanceLedgerEntries.value() as any).body().value().val().value().storage();
 }
 
-export const getTokensFromPool = async (server: Server) => {
+export const getReserves = async (server: Server) => {
     const poolInstanceStorageEntries = await getInstanceStorage(server, POOL_ID);
     const reserves = new Map<string, ReserveData>();
     const reservesReverseMap = {};
-    const getDefaultReserve = () => ({ sToken: "", debtToken: "", priceFeed: "", discount: 0n, sTokenUnderlyingBalance: 0n, decimals: 0 });
+    const getDefaultReserve = () => ({ debtToken: "", sTokenUnderlyingBalance: 0n });
     for (let i = 0; i < poolInstanceStorageEntries.length; i++) {
         const key = parseScvToJs(poolInstanceStorageEntries[i].key());
-        if (key[0] === "PriceFeed") {
-            const token = key[1];
-            const value = parseScvToJs(poolInstanceStorageEntries[i].val()) as string;
-            const reserve = reserves.get(token) || getDefaultReserve();
-            reserve.priceFeed = value;
-            reserves.set(token, reserve);
-        }
         if (key[0] === "ReserveAssetKey") {
             const token = key[1];
-            const value = parseScvToJs(poolInstanceStorageEntries[i].val()) as any;
-            const { debt_token_address: debtToken, s_token_address: sToken, configuration } = value;
+            const value = parseScvToJs(poolInstanceStorageEntries[i].val()) as PoolReserveData;
+            const { debt_token_address: debtToken, s_token_address: sToken } = value;
             const reserve = reserves.get(token) || getDefaultReserve();
-            reserve.sToken = sToken;
             reserve.debtToken = debtToken;
-            reserve.discount = BigInt((configuration.get("discount") / PERCENTAGE_FACTOR) * FACTOR);
-            reserve.decimals = configuration.get("decimals");
             reservesReverseMap[sToken] = {lpTokenType: "sToken", token};
-            reservesReverseMap[debtToken] = {lpTokenType: "debtToken", token};
             reserves.set(token, reserve);
         }
     }
     // exceeded-limit-fix
     for (let i = 0; i < poolInstanceStorageEntries.length; i++) {
         const key = parseScvToJs(poolInstanceStorageEntries[i].key());
-        if (key[0] === "TokenSupply") {
-            const lpToken = key[1];
-            const value = parseScvToJs(poolInstanceStorageEntries[i].val()) as bigint;
-            const { lpTokenType, token } = reservesReverseMap[lpToken];
-            const reserve = reserves.get(token);
-            if (lpTokenType === "sToken") {
-                reserve.sTokenSupply = value; 
-            }
-            if (lpTokenType === "debtToken") {
-                reserve.debtTokenSupply = value;
-            }
-            reserves.set(token, reserve);
-        }
         if (key[0] === "STokenUnderlyingBalance") {
             const sToken = key[1];
             const value = parseScvToJs(poolInstanceStorageEntries[i].val()) as bigint;
             const { token } = reservesReverseMap[sToken];
             const reserve = reserves.get(token);
             reserve.sTokenUnderlyingBalance = value;
-            reserves.set(token, reserve);
-        }
-    }
-
-    for (const [token, reserve] of reserves.entries()) {
-        if (reserve.debtTokenSupply === null || reserve.debtTokenSupply === undefined) {
-            const debtTokenStorageEntries = await getInstanceStorage(server, reserve.debtToken);
-            for(let i = 0; i < debtTokenStorageEntries.length; i++) {
-                const key = parseScvToJs(debtTokenStorageEntries[i].key());
-                if(key[0] === "TotalSupply") {
-                    const value = parseScvToJs(poolInstanceStorageEntries[i].val()) as bigint;
-                    const reserve = reserves.get[token];
-                    reserve.debtTokenSupply = value;
-                    reserves.set(token, reserve);
-                }
-            }
-        }
-        if (reserve.sTokenSupply === null || reserve.sTokenSupply === undefined) {
-            const sTokenStorageEntries = await getInstanceStorage(server, reserve.sToken);
-            for(let i = 0; i < sTokenStorageEntries.length; i++) {
-                const key = parseScvToJs(sTokenStorageEntries[i].key());
-                if(key[0] === "TotalSupply") {
-                    const value = parseScvToJs(poolInstanceStorageEntries[i].val()) as bigint;
-                    const reserve = reserves.get[token];
-                    reserve.sTokenSupply = value;
-                    reserves.set(token, reserve);
-                }
-            }
-        }
-        if (reserve.decimals === 0) {
-            const key = xdr.ScVal.scvSymbol("METADATA");
-            const decimal = await server.getContractData(token, key)
-                .then(result => {
-                    const entryData = xdr.LedgerEntryData.fromXDR(result.xdr, 'base64');
-                    const { decimal } = parseScvToJs(entryData.contractData().body().data().val()) as any;
-                    return decimal;
-                })
-                .catch((r) => {
-                    // TODO: work with expired persistent storage
-                    if (token === XLM_NATIVE) {
-                        return 7;
-                    } else {
-                        return 9;
-                    }
-                });
-            reserve.decimals = decimal;
             reserves.set(token, reserve);
         }
     }
@@ -131,69 +61,66 @@ export const getPrice = async (server: Server, priceFeed: string, token: string)
     }
 }
 
-export function getUserBalance (server: Server, token: string, user: string): Promise<TokenBalance> {
-    const key = xdr.ScVal.scvVec([
-        xdr.ScVal.scvSymbol('Balance'),
-        Address.fromString(user).toScVal(),
-    ]);
-    return server.getContractData(token, key)
-        .then(result => {
-            const entryData = xdr.LedgerEntryData.fromXDR(result.xdr, 'base64');
-            return {token, balance: scValToBigInt(entryData.contractData().body().data().val())};
-        })
-        .catch((reason) => reason.message.includes("Contract data not found") ? {token, balance: 0n} : Promise.reject(reason)); // need to be bumped
-}
-
-export const getNpv = (server: Server, user: string, poolContract: Contract, account: Account) => {
-    const operation = new TransactionBuilder(account, {
+export const getBalance = async (server: Server, token: string, user: string): Promise<bigint>  => {
+    const account = await server.getAccount(LIQUIDATOR_ADDRESS);
+    const contract = new Contract(token);
+    const transaction = new TransactionBuilder(account, {
         fee: BASE_FEE,
-        networkPassphrase: PASSPHRASE,
-    }).addOperation(poolContract.call("account_position", Address.fromString(user).toScVal()))
+        networkPassphrase: NETWORK_PASSPHRASE,
+    }).addOperation(contract.call("balance", Address.fromString(user).toScVal()))
         .setTimeout(TimeoutInfinite)
         .build();
 
-    return server.prepareTransaction(
-        operation,
-        PASSPHRASE)
-        .then(transaction => server.simulateTransaction(transaction))
-        .then(simulateResult => {
-            const { npv } = parseScvToJs(simulateResult.result.retval) as any;
-            return npv
-        });
+    return server.simulateTransaction(transaction)
+        .then(simulateResult => parseScvToJs(simulateResult.result.retval) as bigint);   
 }
 
-export const getDebtCoeff = (server: Server, token: string, poolContract: Contract, account: Account) => {
+export const getAccountPosition = async (server: Server, user: string): Promise<PoolAccountPosition> => {
+    const account = await server.getAccount(LIQUIDATOR_ADDRESS);
+    const contract = new Contract(POOL_ID);
+    const transaction = new TransactionBuilder(account, {
+        fee: BASE_FEE,
+        networkPassphrase: NETWORK_PASSPHRASE,
+    }).addOperation(contract.call("account_position", Address.fromString(user).toScVal()))
+        .setTimeout(TimeoutInfinite)
+        .build();
+
+    return server.simulateTransaction(transaction)
+        .then(simulateResult => parseScvToJs(simulateResult.result.retval) as PoolAccountPosition);
+}
+
+export const getDebtCoeff = async (server: Server, token: string) => {
+    const account = await server.getAccount(LIQUIDATOR_ADDRESS);
+    const contract = new Contract(POOL_ID);
     const tokenAddressScVal = new Contract(token).address().toScVal();
-    const operation = new TransactionBuilder(account, {
+    const transaction = new TransactionBuilder(account, {
         fee: BASE_FEE,
-        networkPassphrase: PASSPHRASE,
-    }).addOperation(poolContract.call("debt_coeff", tokenAddressScVal))
+        networkPassphrase: NETWORK_PASSPHRASE,
+    }).addOperation(contract.call("debt_coeff", tokenAddressScVal))
         .setTimeout(TimeoutInfinite)
         .build();
 
-    return server.prepareTransaction(
-        operation,
-        PASSPHRASE)
-        .then(transaction => server.simulateTransaction(transaction))
+    return server.simulateTransaction(transaction)
         .then(simulateResult => {
             const debtCoeff = parseScvToJs(simulateResult.result.retval) as bigint;
             return debtCoeff;
         });
 }
 
-export const tryLiquidate = async (server: Server, poolContract: Contract, who: string) => {
-    const account = await server.getAccount(KEEPER_PUB);
+export const liquidate = async (server: Server, who: string) => {
+    const account = await server.getAccount(LIQUIDATOR_ADDRESS);
+    const contract = new Contract(POOL_ID);
     const operation = new TransactionBuilder(account, {
         fee: BASE_FEE,
-        networkPassphrase: PASSPHRASE,
-    }).addOperation(poolContract.call("liquidate", Address.fromString(KEEPER_PUB).toScVal(), Address.fromString(who).toScVal(), xdr.ScVal.scvBool(false)))
+        networkPassphrase: NETWORK_PASSPHRASE,
+    }).addOperation(contract.call("liquidate", Address.fromString(LIQUIDATOR_ADDRESS).toScVal(), Address.fromString(who).toScVal(), xdr.ScVal.scvBool(false)))
         .setTimeout(TimeoutInfinite)
         .build();
     const transaction = await server.prepareTransaction(
         operation,
         process.env.PASSPHRASE);
 
-    transaction.sign(Keypair.fromSecret(KEEPER_S));
+    transaction.sign(Keypair.fromSecret(LIQUIDATOR_SECRET));
 
     return server.sendTransaction(transaction);
 }
