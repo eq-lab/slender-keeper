@@ -1,6 +1,6 @@
 import { Server, xdr } from "soroban-client";
 import StellarSdk from 'stellar-sdk';
-import {humanizeEvents} from 'stellar-base';
+import { humanizeEvents } from 'stellar-base';
 import { readLastSyncedLedger, updateLastSyncedLedger, insertBorrowers } from "./db";
 import { CONTRACT_CREATION_LEDGER, HORIZON_URL, POOL_ID } from "./consts";
 

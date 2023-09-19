@@ -1,4 +1,4 @@
-import { Address, Contract, Server, xdr, scValToBigInt, TransactionBuilder, BASE_FEE, TimeoutInfinite, Keypair } from "soroban-client";
+import { Address, Contract, Server, xdr, scValToBigInt, TransactionBuilder, BASE_FEE, TimeoutInfinite, Keypair, SorobanRpc } from "soroban-client";
 import { PoolAccountPosition, PoolReserveData, ReserveData } from "./types";
 import { parseScvToJs } from "./parseScvToJs";
 import { LIQUIDATOR_ADDRESS, LIQUIDATOR_SECRET, NETWORK_PASSPHRASE, POOL_ID } from "./consts";
@@ -8,11 +8,10 @@ export const getInstanceStorage = async (server: Server, contractId: string) => 
         new xdr.LedgerKeyContractData({
             contract: new Contract(contractId).address().toScAddress(),
             key: xdr.ScVal.scvLedgerKeyContractInstance(),
-            durability: xdr.ContractDataDurability.persistent(),
-            bodyType: xdr.ContractEntryBodyType.dataEntry()
+            durability: xdr.ContractDataDurability.persistent()
         })
     );
-    const poolInstanceLedgerEntriesRaw = await server.getLedgerEntries([ledgerKey]);
+    const poolInstanceLedgerEntriesRaw = await server.getLedgerEntries(ledgerKey);
     const poolInstanceLedgerEntries = xdr.LedgerEntryData.fromXDR(poolInstanceLedgerEntriesRaw.entries[0].xdr, "base64");
     return (poolInstanceLedgerEntries.value() as any).body().value().val().value().storage();
 }
@@ -30,7 +29,7 @@ export const getReserves = async (server: Server) => {
             const { debt_token_address: debtToken, s_token_address: sToken } = value;
             const reserve = reserves.get(token) || getDefaultReserve();
             reserve.debtToken = debtToken;
-            reservesReverseMap[sToken] = {lpTokenType: "sToken", token};
+            reservesReverseMap[sToken] = { lpTokenType: "sToken", token };
             reserves.set(token, reserve);
         }
     }
@@ -77,16 +76,16 @@ export const liquidate = async (server: Server, who: string) => {
         fee: BASE_FEE,
         networkPassphrase: NETWORK_PASSPHRASE,
     }).addOperation(contract.call("liquidate", Address.fromString(LIQUIDATOR_ADDRESS).toScVal(), Address.fromString(who).toScVal(), xdr.ScVal.scvBool(false)))
-    .setTimeout(TimeoutInfinite)
-    .build();
+        .setTimeout(TimeoutInfinite)
+        .build();
     const transaction = await server.prepareTransaction(
         operation,
         process.env.PASSPHRASE);
     transaction.sign(Keypair.fromSecret(LIQUIDATOR_SECRET));
     return server.sendTransaction(transaction);
 }
-    
-async function simulateTransaction<T> (server: Server, contractAddress: string, call: string, ...args: xdr.ScVal[]): Promise<T> {
+
+async function simulateTransaction<T>(server: Server, contractAddress: string, call: string, ...args: xdr.ScVal[]): Promise<T> {
     const account = await server.getAccount(LIQUIDATOR_ADDRESS);
     const contract = new Contract(contractAddress);
     const transaction = new TransactionBuilder(account, {
@@ -95,7 +94,15 @@ async function simulateTransaction<T> (server: Server, contractAddress: string, 
     }).addOperation(contract.call(call, ...args))
         .setTimeout(TimeoutInfinite)
         .build();
-    
+
     return server.simulateTransaction(transaction)
-        .then(simulateResult => parseScvToJs(simulateResult.result.retval));
+        .then(simulated => {
+            if (SorobanRpc.isSimulationError(simulated)) {
+                throw new Error(simulated.error);
+            } else if (!simulated.result) {
+                throw new Error(`invalid simulation: no result in ${simulated}`);
+            }
+
+            return parseScvToJs(simulated.result.retval)
+        });
 }
