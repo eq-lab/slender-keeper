@@ -2,7 +2,7 @@ import {
   Server,
 } from "soroban-client";
 import { populateDbWithBorrowers } from "./sync";
-import { getDebtCoeff, getAccountPosition, getReserves, getBalance, liquidate } from "./contracts";
+import { getDebtCoeff, getAccountPosition, getReserves, getBalance, liquidate, getCompoundedDebt } from "./contracts";
 import { POOL_PRECISION_FACTOR, SOROBAN_URL, LIQUIDATOR_ADDRESS } from "./consts";
 import { readBorrowers, deleteBorrower, deleteBorrowers } from "./db";
 
@@ -31,68 +31,43 @@ async function main() {
 
         deleteBorrowers(borrowersToDelete);
 
-        const liquidatorBalances = new Map<string, bigint>;
-        const borrowersDebt = new Map<string, Map<string, bigint>>;
-
         for (const [token, { debtToken }] of reserves.entries()) {
+            let abortLiquidation = false;
+            let liquidatorBalance;
             try {
-                const liquidatorBalance = await getBalance(server, token, LIQUIDATOR_ADDRESS);
-                liquidatorBalances.set(token, liquidatorBalance);
+                liquidatorBalance = await getBalance(server, token, LIQUIDATOR_ADDRESS);
             } catch (e) {
                 throw Error(`Read liquidator balance error (may be storage expired): ${e}`);
             }
             const debtCoeff = await getDebtCoeff(server, token);
             for (const borrower of borrowersToLiquidate) {
-                try {
-                    const debtTokenBalance = await getBalance(server, debtToken, borrower);
-                    const compoundedDebt = (debtCoeff * debtTokenBalance) / BigInt(POOL_PRECISION_FACTOR);
-                    const debts = borrowersDebt.get(token) || new Map<string, bigint>;
-                    debts.set(token, compoundedDebt);
-                    borrowersDebt.set(borrower, debts);
-                } catch (e) {
-                    console.warn(`Read borrower balance error: ${e}`);
-                    continue;
-                }
-            }
-        }
+                let borrowerBalance;
+                do {
+                    try {
+                        borrowerBalance = await getCompoundedDebt(server, borrower, debtToken, debtCoeff);
+                    } catch (e) {
+                        console.warn(`Read borrower balance error: ${e}\nborrower: ${borrower}\ntoken: ${token}`);
+                        break;
+                    }
 
-        const liquidations = [];
+                    if (liquidatorBalance >= borrowerBalance) {
+                        try {
+                            await liquidate(server, borrower, token);
+                            liquidatorBalance -= borrowerBalance;
+                        } catch (e) {
+                            console.warn(`Liquidation error: ${e}\nborrower: ${borrower}\ntoken: ${token}`);
+                            break;
+                        }
+                    }
 
-        for (const [borrower, debts] of borrowersDebt.entries()) {
-            let abortLiquidation = false;
-            for (const [token, debt] of debts.entries()) {
-                if (liquidatorBalances.get(token) <= debt) {
-                    // avoid liquidation for current borrower
-                    abortLiquidation = true;
+                    if (liquidatorBalance <= 0n) {
+                        abortLiquidation = true;
+                    }
+                } while (!abortLiquidation || borrowerBalance !== 0);
+
+                if (abortLiquidation) {
                     break;
                 }
-            }
-            if (abortLiquidation) {
-                continue;
-            }
-            liquidations.push(
-                liquidate(server, borrower)
-                    .then(() => borrower)
-                    .catch((reason) => [borrower, reason])
-            );
-            for (const [token, debt] of debts.entries()) {
-                const liquidatorBalance = liquidatorBalances.get(token) - debt;
-                abortLiquidation = liquidatorBalance <= 0n;
-                liquidatorBalances.set(token, liquidatorBalance);
-            }
-            // avoid liquidation for all further borrowers
-            if (abortLiquidation) {
-                break;
-            }
-        }
-
-        const liquidationResults = await Promise.allSettled(liquidations);
-        
-        for (const liquidationResult of liquidationResults) {
-            if (liquidationResult.status === "fulfilled") {
-                deleteBorrower(liquidationResult.value);
-            } else {
-                console.warn(`Liquidation error: ${liquidationResult.reason}`);
             }
         }
     }
