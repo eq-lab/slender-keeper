@@ -1,7 +1,7 @@
 import { Address, Contract, Server, xdr, scValToBigInt, TransactionBuilder, BASE_FEE, TimeoutInfinite, Keypair, SorobanRpc } from "soroban-client";
 import { PoolAccountPosition, PoolReserveData, ReserveData } from "./types";
 import { parseScvToJs } from "./parseScvToJs";
-import { LIQUIDATOR_ADDRESS, LIQUIDATOR_SECRET, NETWORK_PASSPHRASE, POOL_ID } from "./consts";
+import { LIQUIDATOR_ADDRESS, LIQUIDATOR_SECRET, NETWORK_PASSPHRASE, POOL_ID, POOL_PRECISION_FACTOR } from "./consts";
 
 export const getInstanceStorage = async (server: Server, contractId: string) => {
     const ledgerKey = xdr.LedgerKey.contractData(
@@ -69,13 +69,19 @@ export const getAccountPosition = async (server: Server, user: string): Promise<
 export const getDebtCoeff = async (server: Server, token: string): Promise<bigint> =>
     simulateTransaction(server, token, "debt_coeff", new Contract(token).address().toScVal())
 
-export const liquidate = async (server: Server, who: string) => {
+export const liquidate = async (server: Server, who: string, token: string) => {
     const account = await server.getAccount(LIQUIDATOR_ADDRESS);
     const contract = new Contract(POOL_ID);
     const operation = new TransactionBuilder(account, {
         fee: BASE_FEE,
         networkPassphrase: NETWORK_PASSPHRASE,
-    }).addOperation(contract.call("liquidate", Address.fromString(LIQUIDATOR_ADDRESS).toScVal(), Address.fromString(who).toScVal(), xdr.ScVal.scvBool(false)))
+    }).addOperation(contract.call(
+        "liquidate",
+        Address.fromString(LIQUIDATOR_ADDRESS).toScVal(),
+        Address.fromString(who).toScVal(),
+        Address.fromString(token).toScVal(),
+        xdr.ScVal.scvBool(false))
+    )
         .setTimeout(TimeoutInfinite)
         .build();
     const transaction = await server.prepareTransaction(
@@ -83,6 +89,11 @@ export const liquidate = async (server: Server, who: string) => {
         process.env.PASSPHRASE);
     transaction.sign(Keypair.fromSecret(LIQUIDATOR_SECRET));
     return server.sendTransaction(transaction);
+}
+
+export const getCompoundedDebt = async (server: Server, who: string, debtToken: string, debtCoeff: bigint): Promise<bigint> => {
+    const debtTokenBalance = await getBalance(server, debtToken, who);
+    return (debtCoeff * debtTokenBalance) / BigInt(POOL_PRECISION_FACTOR);
 }
 
 async function simulateTransaction<T>(server: Server, contractAddress: string, call: string, ...args: xdr.ScVal[]): Promise<T> {
