@@ -1,19 +1,18 @@
-import {
-  Server,
-} from "soroban-client";
 import { populateDbWithBorrowers } from "./sync";
 import { getDebtCoeff, getAccountPosition, getReserves, getBalance, liquidate } from "./contracts";
-import { POOL_PRECISION_FACTOR, SOROBAN_URL, LIQUIDATOR_ADDRESS } from "./consts";
+import { POOL_PRECISION_FACTOR, SOROBAN_URL, LIQUIDATOR_ADDRESS } from "./configuration";
 import { readBorrowers, deleteBorrower, deleteBorrowers } from "./db";
+import { SorobanRpc } from "@stellar/stellar-sdk";
 
 async function main() {
-    const server = new Server(SOROBAN_URL);
+    const rpc = new SorobanRpc.Server(SOROBAN_URL);
+
     while (true) {
-        await populateDbWithBorrowers(server);
+        await populateDbWithBorrowers(rpc);
         const users = readBorrowers();
-        const reserves = await getReserves(server);
-    
-        const positionsResults = await Promise.allSettled(users.map(user => getAccountPosition(server, user)));
+        const reserves = await getReserves(rpc);
+
+        const positionsResults = await Promise.allSettled(users.map(user => getAccountPosition(rpc, user.borrower)));
         const borrowersToLiquidate = [];
         const borrowersToDelete = [];
 
@@ -34,21 +33,23 @@ async function main() {
         const liquidatorBalances = new Map<string, bigint>;
         const borrowersDebt = new Map<string, Map<string, bigint>>;
 
-        for (const [token, { debtToken }] of reserves.entries()) {
+        for (const { asset, debt_token } of reserves) {
             try {
-                const liquidatorBalance = await getBalance(server, token, LIQUIDATOR_ADDRESS);
-                liquidatorBalances.set(token, liquidatorBalance);
+                const liquidatorBalance = await getBalance(rpc, asset, LIQUIDATOR_ADDRESS);
+                liquidatorBalances.set(asset, liquidatorBalance);
             } catch (e) {
                 throw Error(`Read liquidator balance error (may be storage expired): ${e}`);
             }
-            const debtCoeff = await getDebtCoeff(server, token);
+
+            const debtCoeff = await getDebtCoeff(rpc, asset);
+
             for (const borrower of borrowersToLiquidate) {
                 try {
-                    const debtTokenBalance = await getBalance(server, debtToken, borrower);
+                    const debtTokenBalance = await getBalance(rpc, debt_token, borrower.borrower);
                     const compoundedDebt = (debtCoeff * debtTokenBalance) / BigInt(POOL_PRECISION_FACTOR);
-                    const debts = borrowersDebt.get(token) || new Map<string, bigint>;
-                    debts.set(token, compoundedDebt);
-                    borrowersDebt.set(borrower, debts);
+                    const debts = borrowersDebt.get(asset) || new Map<string, bigint>;
+                    debts.set(asset, compoundedDebt);
+                    borrowersDebt.set(borrower.borrower, debts);
                 } catch (e) {
                     console.warn(`Read borrower balance error: ${e}`);
                     continue;
@@ -71,8 +72,8 @@ async function main() {
                 continue;
             }
             liquidations.push(
-                liquidate(server, borrower)
-                    .then(() => borrower)
+                liquidate(rpc, borrower)
+                    .then(() => [borrower, undefined])
                     .catch((reason) => [borrower, reason])
             );
             for (const [token, debt] of debts.entries()) {
@@ -87,12 +88,12 @@ async function main() {
         }
 
         const liquidationResults = await Promise.allSettled(liquidations);
-        
+
         for (const liquidationResult of liquidationResults) {
-            if (liquidationResult.status === "fulfilled") {
-                deleteBorrower(liquidationResult.value);
+            if (liquidationResult.status === "fulfilled" && !liquidationResult.value[1]) {
+                deleteBorrower(liquidationResult.value[0]);
             } else {
-                console.warn(`Liquidation error: ${liquidationResult.reason}`);
+                console.warn(`Liquidation error: ${liquidationResult}`);
             }
         }
     }

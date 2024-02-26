@@ -1,28 +1,37 @@
-import { Server, xdr } from "soroban-client";
-import StellarSdk from 'stellar-sdk';
-import { humanizeEvents } from 'stellar-base';
 import { readLastSyncedLedger, updateLastSyncedLedger, insertBorrowers } from "./db";
-import { CONTRACT_CREATION_LEDGER, HORIZON_URL, POOL_ID } from "./consts";
+import { CONTRACT_CREATION_LEDGER, HORIZON_URL, POOL_ID } from "./configuration";
+import { Horizon, SorobanRpc, humanizeEvents, xdr } from "@stellar/stellar-sdk";
 
-export const populateDbWithBorrowers = async (server: Server) => {
-    let lastLedger = (await server.getLatestLedger()).sequence;
+export const populateDbWithBorrowers = async (rpc: SorobanRpc.Server) => {
+    let lastLedger = (await rpc.getLatestLedger()).sequence;
     const lastSyncedLedger = readLastSyncedLedger();
+
     if (lastLedger > lastSyncedLedger) {
-        const horizon = new StellarSdk.Server(HORIZON_URL);
+        const horizon = new Horizon.Server(HORIZON_URL);
         let currentLedger = lastSyncedLedger === 0 ? CONTRACT_CREATION_LEDGER : lastSyncedLedger + 1;
+
         console.log(`Sync from: ${currentLedger} to ${lastLedger}`);
+
         while (lastLedger > currentLedger) {
-            const stellarTransactions = (await horizon.transactions().forLedger(currentLedger).call()).records;
-            for (const tx of stellarTransactions) {
-                let xdrEvents = xdr.TransactionMeta.fromXDR(tx.result_meta_xdr, "base64").v3().sorobanMeta().events();
-                const events = humanizeEvents(xdrEvents)
-                    .filter(e => e.contractId === POOL_ID && (e.topics[0] === 'borrow'));
-                const borrowersAddresses = events.map(e => e.topics[1]);
-                insertBorrowers(borrowersAddresses);
+            const transactions = await horizon.transactions().forLedger(currentLedger).call();
+
+            for (const tx of transactions.records) {
+                const xdrMeta = xdr.TransactionMeta.fromXDR(tx.result_meta_xdr, "base64").v3().sorobanMeta();
+
+                if (!xdrMeta || !xdrMeta.events())
+                    continue;
+
+                const events = humanizeEvents(xdrMeta.events())
+                    .filter(e => e.contractId === POOL_ID && e.topics[0] === 'borrow');
+                const borrower = events.map(e => e.topics[1]);
+
+                insertBorrowers(borrower);
             }
+
             updateLastSyncedLedger(currentLedger);
+
             currentLedger += 1;
-            lastLedger = (await server.getLatestLedger()).sequence;
+            lastLedger = (await rpc.getLatestLedger()).sequence;
         }
     }
 }

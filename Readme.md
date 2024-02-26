@@ -27,13 +27,14 @@ This service is designed to automate the process of monitoring of borrowers posi
 - The service handles liquidation errors and updates the database with borrowers accordingly.
 ## Configuration
 To configure the service for your specific environment, you'll need to set the following env or set values in the `src/consts.ts` file:
-`CONTRACT_CREATION_LEDGER` - ledget at which Slender pool was created\
+`CONTRACT_CREATION_LEDGER` - ledget sequence number at which Slender pool was created\
 `POOL_ID` - Slender pool address\
+`POOL_ASSETS` - comma separated list of pool asset addresses\
 `XLM_NATIVE` - address of XLM contract\
 `SOROBAN_URL` - Sorban RPC URL\
 `HORIZON_URL` - Horizon RPC URL\
 `NETWORK_PASSPHRASE` - Soroban passphrase\
 `LIQUIDATOR_ADDRESS` - liquidator's account address\
-`LIQUIDATOR_SECRET` - liquidator's secret key
+`LIQUIDATOR_SECRET` - liquidator's secret key\
 ## License
 This project is licensed under the MIT License - see the LICENSE file for details.
