@@ -12,7 +12,7 @@ git clone https://github.com/eq-lab/slender-keeper.git
 cd slender-keeper
 yarn install
 ```
-3. **Configuration**: Configure the service by setting envs (see below) or by updating the necessary parameters in the `src/consts.ts` file.
+3. **Configuration**: Configure the service by setting envs (see below) or by updating the necessary parameters in the `src/configuration.ts` file.
 4. **Running the Service**: Start the service by running the following command:
 ```bash
 yarn start
@@ -26,8 +26,8 @@ This service is designed to automate the process of monitoring of borrowers posi
 - If the liquidator has sufficient balances, it initiates the liquidation process for the borrower.
 - The service handles liquidation errors and updates the database with borrowers accordingly.
 ## Configuration
-To configure the service for your specific environment, you'll need to set the following env or set values in the `src/consts.ts` file:
-`CONTRACT_CREATION_LEDGER` - ledget sequence number at which Slender pool was created\
+To configure the service for your specific environment, you'll need to set the following env or set values in the `src/configuration.ts` file:
+`CONTRACT_CREATION_LEDGER` - ledger number at which Slender pool was created\
 `POOL_ID` - Slender pool address\
 `POOL_ASSETS` - comma separated list of pool asset addresses\
 `XLM_NATIVE` - address of XLM contract\

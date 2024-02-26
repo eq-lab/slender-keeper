@@ -90,7 +90,7 @@ async function main() {
         const liquidationResults = await Promise.allSettled(liquidations);
 
         for (const liquidationResult of liquidationResults) {
-            if (liquidationResult.status === "fulfilled" && !liquidationResult.value[1]) {
+            if (liquidationResult.status === "fulfilled" && liquidationResult.value[1] == undefined) {
                 deleteBorrower(liquidationResult.value[0]);
             } else {
                 console.warn(`Liquidation error: ${liquidationResult}`);
