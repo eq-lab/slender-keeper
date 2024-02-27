@@ -1,119 +1,134 @@
-import { Address, Contract, Server, xdr, scValToBigInt, TransactionBuilder, BASE_FEE, TimeoutInfinite, Keypair, SorobanRpc } from "soroban-client";
+import { Address, BASE_FEE, Contract, Keypair, SorobanRpc, TimeoutInfinite, TransactionBuilder, xdr } from "@stellar/stellar-sdk";
+import { promisify } from "util";
+
 import { PoolAccountPosition, PoolReserveData, ReserveData } from "./types";
-import { parseScvToJs } from "./parseScvToJs";
-import { LIQUIDATOR_ADDRESS, LIQUIDATOR_SECRET, NETWORK_PASSPHRASE, POOL_ID, POOL_PRECISION_FACTOR } from "./consts";
+import { LIQUIDATOR_ADDRESS, LIQUIDATOR_SECRET, NETWORK_PASSPHRASE, POOL_ASSETS, POOL_ID } from "./configuration";
+import { convertScvToJs } from "./parseScvToJs";
 
-export const getInstanceStorage = async (server: Server, contractId: string) => {
-    const ledgerKey = xdr.LedgerKey.contractData(
-        new xdr.LedgerKeyContractData({
-            contract: new Contract(contractId).address().toScAddress(),
-            key: xdr.ScVal.scvLedgerKeyContractInstance(),
-            durability: xdr.ContractDataDurability.persistent()
-        })
-    );
-    const poolInstanceLedgerEntriesRaw = await server.getLedgerEntries(ledgerKey);
-    const poolInstanceLedgerEntries = xdr.LedgerEntryData.fromXDR(poolInstanceLedgerEntriesRaw.entries[0].xdr, "base64");
-    return (poolInstanceLedgerEntries.value() as any).body().value().val().value().storage();
+export async function getReserves(rpc: SorobanRpc.Server): Promise<ReserveData[]> {
+    const reserves = POOL_ASSETS
+        .split(",")
+        .map(asset => getReserve(rpc, asset)
+            .then((r) => ({ asset: asset, reserve: r }))
+            .catch(() => undefined));
+
+    const reserveData = (await Promise.all(reserves))
+        .filter((t) => !!t && t.reserve.reserve_type[0] === "Fungible")
+        .map<ReserveData>(r => ({ asset: r.asset, debt_token: r.reserve.reserve_type[2] }));
+
+    return reserveData;
 }
 
-export const getReserves = async (server: Server) => {
-    const poolInstanceStorageEntries = await getInstanceStorage(server, POOL_ID);
-    const reserves = new Map<string, ReserveData>();
-    const reservesReverseMap = {};
-    const getDefaultReserve = () => ({ debtToken: "", sTokenUnderlyingBalance: 0n });
-    for (let i = 0; i < poolInstanceStorageEntries.length; i++) {
-        const key = parseScvToJs(poolInstanceStorageEntries[i].key());
-        if (key[0] === "ReserveAssetKey") {
-            const token = key[1];
-            const value = parseScvToJs(poolInstanceStorageEntries[i].val()) as PoolReserveData;
-            const { debt_token_address: debtToken, s_token_address: sToken } = value;
-            const reserve = reserves.get(token) || getDefaultReserve();
-            reserve.debtToken = debtToken;
-            reservesReverseMap[sToken] = { lpTokenType: "sToken", token };
-            reserves.set(token, reserve);
-        }
-    }
-    // exceeded-limit-fix
-    for (let i = 0; i < poolInstanceStorageEntries.length; i++) {
-        const key = parseScvToJs(poolInstanceStorageEntries[i].key());
-        if (key[0] === "STokenUnderlyingBalance") {
-            const sToken = key[1];
-            const value = parseScvToJs(poolInstanceStorageEntries[i].val()) as bigint;
-            const { token } = reservesReverseMap[sToken];
-            const reserve = reserves.get(token);
-            reserve.sTokenUnderlyingBalance = value;
-            reserves.set(token, reserve);
-        }
-    }
-
-    return reserves;
+export async function getBalance(rpc: SorobanRpc.Server, token: string, user: string): Promise<bigint> {
+    return simulateTransaction(rpc, token, "balance", Address.fromString(user).toScVal());
 }
 
-export const getPrice = async (server: Server, priceFeed: string, token: string) => {
-    const priceFeedInstanceStorageEntries = await getInstanceStorage(server, priceFeed);
-    for (let i = 0; i < priceFeedInstanceStorageEntries.length; i++) {
-        const key = parseScvToJs(priceFeedInstanceStorageEntries[i].key());
-        if (key[0] === "Price" && key[1] === token) {
-            const value = scValToBigInt(priceFeedInstanceStorageEntries[i].val());
-            return value;
-        }
-    }
+export async function getReserve(rpc: SorobanRpc.Server, asset: string): Promise<PoolReserveData> {
+    return simulateTransaction(rpc, POOL_ID, "get_reserve", Address.fromString(asset).toScVal());
 }
 
-export const getBalance = async (server: Server, token: string, user: string): Promise<bigint> =>
-    simulateTransaction(server, token, "balance", Address.fromString(user).toScVal());
-
-export const getAccountPosition = async (server: Server, user: string): Promise<PoolAccountPosition> =>
-    simulateTransaction(server, POOL_ID, "account_position", Address.fromString(user).toScVal());
-
-export const getDebtCoeff = async (server: Server, token: string): Promise<bigint> =>
-    simulateTransaction(server, token, "debt_coeff", new Contract(token).address().toScVal())
-
-export const liquidate = async (server: Server, who: string, token: string) => {
-    const account = await server.getAccount(LIQUIDATOR_ADDRESS);
-    const contract = new Contract(POOL_ID);
-    const operation = new TransactionBuilder(account, {
-        fee: BASE_FEE,
-        networkPassphrase: NETWORK_PASSPHRASE,
-    }).addOperation(contract.call(
-        "liquidate",
-        Address.fromString(LIQUIDATOR_ADDRESS).toScVal(),
-        Address.fromString(who).toScVal(),
-        Address.fromString(token).toScVal(),
-        xdr.ScVal.scvBool(false))
-    )
-        .setTimeout(TimeoutInfinite)
-        .build();
-    const transaction = await server.prepareTransaction(
-        operation,
-        process.env.PASSPHRASE);
-    transaction.sign(Keypair.fromSecret(LIQUIDATOR_SECRET));
-    return server.sendTransaction(transaction);
+export async function getAccountPosition(rpc: SorobanRpc.Server, user: string): Promise<PoolAccountPosition> {
+    return simulateTransaction(rpc, POOL_ID, "account_position", Address.fromString(user).toScVal());
 }
 
-export const getCompoundedDebt = async (server: Server, who: string, debtToken: string, debtCoeff: bigint): Promise<bigint> => {
-    const debtTokenBalance = await getBalance(server, debtToken, who);
-    return (debtCoeff * debtTokenBalance) / BigInt(POOL_PRECISION_FACTOR);
+export async function getDebtCoeff(rpc: SorobanRpc.Server, token: string): Promise<bigint> {
+    return simulateTransaction(rpc, POOL_ID, "debt_coeff", new Contract(token).address().toScVal())
 }
 
-async function simulateTransaction<T>(server: Server, contractAddress: string, call: string, ...args: xdr.ScVal[]): Promise<T> {
-    const account = await server.getAccount(LIQUIDATOR_ADDRESS);
+export async function liquidate(rpc: SorobanRpc.Server, who: string): Promise<void> {
+    return call(rpc, POOL_ID, "liquidate", Address.fromString(LIQUIDATOR_ADDRESS).toScVal(), Address.fromString(who).toScVal(), xdr.ScVal.scvBool(false));
+}
+
+async function simulateTransaction<T>(
+    rpc: SorobanRpc.Server,
+    contractAddress: string,
+    method: string,
+    ...args: xdr.ScVal[]
+): Promise<T> {
+    const caller = await rpc.getAccount(LIQUIDATOR_ADDRESS);
     const contract = new Contract(contractAddress);
-    const transaction = new TransactionBuilder(account, {
+
+    const transaction = new TransactionBuilder(caller, {
         fee: BASE_FEE,
         networkPassphrase: NETWORK_PASSPHRASE,
-    }).addOperation(contract.call(call, ...args))
+    })
+        .addOperation(contract.call(method, ...(args ?? [])))
         .setTimeout(TimeoutInfinite)
         .build();
 
-    return server.simulateTransaction(transaction)
-        .then(simulated => {
-            if (SorobanRpc.isSimulationError(simulated)) {
-                throw new Error(simulated.error);
-            } else if (!simulated.result) {
-                throw new Error(`invalid simulation: no result in ${simulated}`);
-            }
+    const simulated = await rpc.simulateTransaction(transaction);
 
-            return parseScvToJs(simulated.result.retval)
-        });
+    if (SorobanRpc.Api.isSimulationError(simulated)) {
+        throw new Error(simulated.error);
+    } else if (!simulated.result) {
+        throw new Error(`invalid simulation: no result in ${simulated}`);
+    }
+
+    return convertScvToJs<T>(simulated.result.retval);
 }
+
+async function call(
+    rpc: SorobanRpc.Server,
+    contractAddress: string,
+    method: string,
+    ...args: xdr.ScVal[]
+): Promise<void> {
+    const callerKeys = Keypair.fromSecret(LIQUIDATOR_SECRET);
+
+    const caller = await rpc.getAccount(callerKeys.publicKey());
+    const contract = new Contract(contractAddress);
+
+    const operation = new TransactionBuilder(caller, {
+        fee: BASE_FEE,
+        networkPassphrase: NETWORK_PASSPHRASE,
+    })
+        .addOperation(contract.call(method, ...(args ?? [])))
+        .setTimeout(TimeoutInfinite)
+        .build();
+
+    const simulated = (await rpc.simulateTransaction(
+        operation,
+    )) as SorobanRpc.Api.SimulateTransactionSuccessResponse;
+
+    if (SorobanRpc.Api.isSimulationError(simulated)) {
+        throw new Error(simulated.error);
+    } else if (!simulated.result) {
+        throw new Error(`Invalid simulation: no result in ${simulated}`);
+    }
+
+    const transaction = SorobanRpc.assembleTransaction(operation, simulated).build();
+
+    transaction.sign(callerKeys);
+
+    const response = await rpc.sendTransaction(transaction);
+
+    let result: SorobanRpc.Api.GetTransactionResponse;
+    let attempts = 15;
+
+    if (response.status == 'ERROR') {
+        throw Error(`Failed to send transaction: ${response.errorResult.toXDR('base64')}`);
+    }
+
+    do {
+        await delay(1000);
+        result = await rpc.getTransaction(response.hash);
+        attempts--;
+    } while (result.status === SorobanRpc.Api.GetTransactionStatus.NOT_FOUND && attempts > 0);
+
+    if (result.status == SorobanRpc.Api.GetTransactionStatus.NOT_FOUND) {
+        throw Error('Submitted transaction was not found');
+    }
+
+    if ('resultXdr' in result) {
+        const getResult = result as SorobanRpc.Api.GetTransactionResponse;
+        if (getResult.status !== SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
+            throw new Error('Transaction result is insuccessfull');
+        } else {
+            return;
+        }
+    }
+
+    throw Error(`Transaction failed (method: ${method})`);
+}
+
+export let delay = promisify((ms, res) => setTimeout(res, ms))

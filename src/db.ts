@@ -22,7 +22,7 @@ export const updateLastSyncedLedger = (lastSyncedLedger: number) => {
     db.prepare('UPDATE ledger SET last_synced=(?) WHERE rowid=1').run(lastSyncedLedger);
 }
 
-export const readBorrowers = () => db.prepare('SELECT borrower from borrowers').get() || []
+export const readBorrowers = () => db.prepare('SELECT borrower from borrowers').all() || []
 
 export const insertBorrowers = (borrowers: string[]) => {
     for (const borrower of borrowers) {
