@@ -41,3 +41,49 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  deploy-app-slender-stage:
+    needs: build-image-app
+    env:
+      SERVICE_NAME: ${{ vars.APP_NAME }}
+      NAMESPACE: ${{ vars.NAMESPACE}}-stage
+    runs-on: 'ubuntu-latest'
+    steps:
+      - uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.27.1'
+        id: install
+      - uses: azure/setup-helm@v3
+        with:
+          version: 'v3.12.0'
+      - name: 'Clone Helm repository'
+        uses: actions/checkout@v3
+        with:
+          repository: ${{ vars.HELM_REPOSITORY }}
+          ref: 'main'
+          token: ${{ secrets.PAT }}
+      - name: 'Prep extraEnv'
+        run: |
+            cat <<EOF > extraEnv.yml
+            ${{ vars.EXTRA_ENV_FILE }}
+            EOF
+      - name: Set Kubernetes Context
+        uses: azure/k8s-set-context@v3
+        with:
+            method: kubeconfig
+            kubeconfig: ${{ secrets.KUBECONFIG }}
+            context: ${{ env.CLUSTER }}
+      - name: Deploy
+        run: |
+          helm upgrade \
+            -i ${{ env.SERVICE_NAME }} \
+            -n ${{ env.NAMESPACE }} \
+            --set nameOverride=${{ env.SERVICE_NAME }} \
+            --set imagePullSecrets[0].name=${{ vars.GH_SECR }}\
+            --set image.repository=${{ env.REGISTRY }}  \
+            --set image.name=${{ env.IMAGE_NAME }} \
+            --set image.tag=${{ needs.build-image-app.outputs.output_tag }} \
+            --set resources.limits.cpu=${{ env.LIMIT_CPU }} \
+            --set resources.limits.memory=${{ env.LIMIT_MEMORY }} \
+            -f extraEnv.yml \
+            ./
