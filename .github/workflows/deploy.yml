@@ -1,0 +1,89 @@
+name: Slender keeper CI
+on:
+  push:
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: ${{ github.repository }}
+  REGISTRY: ${{ vars.REGISTRY }}
+  LIMIT_CPU: "500m"
+  LIMIT_MEMORY: "512Mi"
+
+jobs:
+  build-image-app:
+    runs-on: ubuntu-latest
+    outputs:
+      output_tag: ${{ steps.tag_env.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4 
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ vars.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,enable=true,priority=600,prefix=,suffix=-{{date 'YYYYMMDD'}}-{{sha}},event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'deploy') }}        
+      - id: tag_env
+        run: echo "tag=${{ env.DOCKER_METADATA_OUTPUT_VERSION }}"  >> $GITHUB_OUTPUT    
+      - name: Build and push
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy-app-slender-stage:
+    needs: build-image-app
+    env:
+      SERVICE_NAME: ${{ vars.APP_NAME }}
+      NAMESPACE: ${{ vars.NAMESPACE}}-stage
+    runs-on: 'ubuntu-latest'
+    steps:
+      - uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.27.1'
+        id: install
+      - uses: azure/setup-helm@v3
+        with:
+          version: 'v3.12.0'
+      - name: 'Clone Helm repository'
+        uses: actions/checkout@v3
+        with:
+          repository: ${{ vars.HELM_REPOSITORY }}
+          ref: 'main'
+          token: ${{ secrets.PAT }}
+      - name: 'Prep extraEnv'
+        run: |
+            cat <<EOF > extraEnv.yml
+            ${{ vars.EXTRA_ENV_FILE }}
+            EOF
+      - name: Set Kubernetes Context
+        uses: azure/k8s-set-context@v3
+        with:
+            method: kubeconfig
+            kubeconfig: ${{ secrets.KUBECONFIG }}
+            context: ${{ env.CLUSTER }}
+      - name: Deploy
+        run: |
+          helm upgrade \
+            -i ${{ env.SERVICE_NAME }} \
+            -n ${{ env.NAMESPACE }} \
+            --set nameOverride=${{ env.SERVICE_NAME }} \
+            --set imagePullSecrets[0].name=${{ vars.GH_SECR }}\
+            --set image.repository=${{ env.REGISTRY }}  \
+            --set image.name=${{ env.IMAGE_NAME }} \
+            --set image.tag=${{ needs.build-image-app.outputs.output_tag }} \
+            --set resources.limits.cpu=${{ env.LIMIT_CPU }} \
+            --set resources.limits.memory=${{ env.LIMIT_MEMORY }} \
+            -f extraEnv.yml \
+            ./
