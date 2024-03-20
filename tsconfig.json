@@ -9,6 +9,8 @@
     "outDir": "dist",
     "forceConsistentCasingInFileNames": true,
     "sourceMap": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
   },
   "include": [
     "src"

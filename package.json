@@ -4,9 +4,12 @@
   "license": "MIT",
   "main": "dist/index.js",
   "dependencies": {
+    "@stellar/stellar-sdk": "^11.2.1",
     "better-sqlite3": "^8.6.0",
     "bigint-conversion": "^2.4.3",
-    "@stellar/stellar-sdk": "^11.2.1"
+    "dotenv": "^16.4.5",
+    "mssql": "^10.0.2",
+    "typeorm": "^0.3.20"
   },
   "scripts": {
     "start": "node dist/index.js",
