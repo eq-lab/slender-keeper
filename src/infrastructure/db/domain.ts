@@ -43,14 +43,6 @@ export const insertBorrowers = async (borrowers: string[]) => {
     }
 }
 
-export const deleteBorrower = async (borrower: string) => {
-    const slenderKeeperRepository = AppDataSource.getRepository(SlenderKeeperState);
-    const currentState = await slenderKeeperRepository.findOneBy({ chain: CHAIN, contractAddress: POOL_ID });
-    const slenderBorrowerRepository = AppDataSource.getRepository(SlenderBorrower);
-    const b = await slenderBorrowerRepository.findOneBy({ keeperStateId: currentState.id, borrower });
-    slenderBorrowerRepository.remove(b);
-}
-
 export const deleteBorrowers = async (borrowers: string[]) => {
     const slenderKeeperRepository = AppDataSource.getRepository(SlenderKeeperState);
     const currentState = await slenderKeeperRepository.findOneBy({ chain: CHAIN, contractAddress: POOL_ID });
