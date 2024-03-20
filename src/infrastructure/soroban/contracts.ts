@@ -2,7 +2,7 @@ import { Address, BASE_FEE, Contract, Keypair, SorobanRpc, TimeoutInfinite, Tran
 import { promisify } from "util";
 
 import { PoolAccountPosition, PoolReserveData, ReserveData } from "./types";
-import { LIQUIDATOR_ADDRESS, LIQUIDATOR_SECRET, NETWORK_PASSPHRASE, POOL_ASSETS, POOL_ID } from "./configuration";
+import { LIQUIDATOR_ADDRESS, LIQUIDATOR_SECRET, NETWORK_PASSPHRASE, POOL_ASSETS, POOL_ID } from "../../configuration";
 import { convertScvToJs } from "./parseScvToJs";
 
 export async function getReserves(rpc: SorobanRpc.Server): Promise<ReserveData[]> {

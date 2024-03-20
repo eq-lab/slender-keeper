@@ -1,15 +1,17 @@
 import { populateDbWithBorrowers } from "./sync";
-import { getDebtCoeff, getAccountPosition, getReserves, getBalance, liquidate } from "./contracts";
+import { getDebtCoeff, getAccountPosition, getReserves, getBalance, liquidate } from "./infrastructure/soroban/contracts";
 import { POOL_PRECISION_FACTOR, SOROBAN_URL, LIQUIDATOR_ADDRESS } from "./configuration";
-import { readBorrowers, deleteBorrower, deleteBorrowers } from "./db";
 import { SorobanRpc } from "@stellar/stellar-sdk";
+import { deleteBorrowers, readBorrowers } from "./infrastructure/db/domain";
+import { AppDataSource } from "./infrastructure/db/data-source";
 
 async function main() {
+    await AppDataSource.initialize()
     const rpc = new SorobanRpc.Server(SOROBAN_URL);
 
     while (true) {
         await populateDbWithBorrowers(rpc);
-        const users = readBorrowers();
+        const users = await readBorrowers();
         const reserves = await getReserves(rpc);
 
         const positionsResults = await Promise.allSettled(users.map(user => getAccountPosition(rpc, user.borrower)));
@@ -28,7 +30,7 @@ async function main() {
             }
         }
 
-        deleteBorrowers(borrowersToDelete);
+        await deleteBorrowers(borrowersToDelete);
 
         const liquidatorBalances = new Map<string, bigint>;
         const borrowersDebt = new Map<string, Map<string, bigint>>;
@@ -91,7 +93,7 @@ async function main() {
 
         for (const liquidationResult of liquidationResults) {
             if (liquidationResult.status === "fulfilled" && liquidationResult.value[1] == undefined) {
-                deleteBorrower(liquidationResult.value[0]);
+                await deleteBorrowers([liquidationResult.value[0]]);
             } else {
                 console.warn(`Liquidation error: ${liquidationResult}`);
             }

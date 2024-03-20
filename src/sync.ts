@@ -1,16 +1,16 @@
-import { readLastSyncedLedger, updateLastSyncedLedger, insertBorrowers } from "./db";
 import { CONTRACT_CREATION_LEDGER, HORIZON_URL, POOL_ID } from "./configuration";
 import { Horizon, SorobanRpc, humanizeEvents, xdr } from "@stellar/stellar-sdk";
+import { insertBorrowers, readLastSyncedLedger, updateLastSyncedLedger } from "./infrastructure/db/domain";
 
 export const populateDbWithBorrowers = async (rpc: SorobanRpc.Server) => {
     let lastLedger = (await rpc.getLatestLedger()).sequence;
-    const lastSyncedLedger = readLastSyncedLedger();
+    const lastSyncedLedger = await readLastSyncedLedger();
 
     if (lastLedger > lastSyncedLedger) {
         const horizon = new Horizon.Server(HORIZON_URL);
-        let currentLedger = lastSyncedLedger === 0 ? CONTRACT_CREATION_LEDGER : lastSyncedLedger + 1;
+        let currentLedger = lastSyncedLedger === 0 ? parseInt(CONTRACT_CREATION_LEDGER.toString()) : lastSyncedLedger + 1;
 
-        console.log(`Sync from: ${currentLedger} to ${lastLedger}`);
+        console.log(`Sync from: ${currentLedger} to: ${lastLedger}`);
 
         while (lastLedger > currentLedger) {
             const transactions = await horizon.transactions().forLedger(currentLedger).call();
@@ -25,10 +25,10 @@ export const populateDbWithBorrowers = async (rpc: SorobanRpc.Server) => {
                     .filter(e => e.contractId === POOL_ID && e.topics[0] === 'borrow');
                 const borrower = events.map(e => e.topics[1]);
 
-                insertBorrowers(borrower);
+                await insertBorrowers(borrower);
             }
 
-            updateLastSyncedLedger(currentLedger);
+            await updateLastSyncedLedger(currentLedger);
 
             currentLedger += 1;
             lastLedger = (await rpc.getLatestLedger()).sequence;
