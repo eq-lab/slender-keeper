@@ -36,5 +36,7 @@ To configure the service for your specific environment, you'll need to set the f
 `NETWORK_PASSPHRASE` - Soroban passphrase\
 `LIQUIDATOR_ADDRESS` - liquidator's account address\
 `LIQUIDATOR_SECRET` - liquidator's secret key\
+`GET_TRANSACTIONS_RETRY` - number of retries to get transaction for particular ledgers\
+`GET_TRANSACTIONS_DELAY_MS` - delay before retrying
 ## License
 This project is licensed under the MIT License - see the LICENSE file for details.
