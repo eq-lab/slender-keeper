@@ -36,7 +36,7 @@ export async function getDebtCoeff(rpc: SorobanRpc.Server, token: string): Promi
 }
 
 export async function liquidate(rpc: SorobanRpc.Server, who: string): Promise<void> {
-    return call(rpc, POOL_ID, "liquidate", Address.fromString(LIQUIDATOR_ADDRESS).toScVal(), Address.fromString(who).toScVal(), xdr.ScVal.scvBool(false));
+    return call(rpc, POOL_ID, "liquidate", Address.fromString(LIQUIDATOR_ADDRESS).toScVal(), Address.fromString(who).toScVal());
 }
 
 async function simulateTransaction<T>(
