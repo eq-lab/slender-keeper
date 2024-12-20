@@ -1,7 +1,7 @@
 import { populateDbWithBorrowers } from "./sync";
 import { getDebtCoeff, getAccountPosition, getReserves, getBalance, liquidate } from "./infrastructure/soroban/contracts";
 import { POOL_PRECISION_FACTOR, SOROBAN_URL, LIQUIDATOR_ADDRESS } from "./configuration";
-import { SorobanRpc } from "@stellar/stellar-sdk";
+import { rpc as SorobanRpc } from "@stellar/stellar-sdk";
 import { deleteBorrowers, readBorrowers } from "./infrastructure/db/domain";
 import { AppDataSource } from "./infrastructure/db/data-source";
 
