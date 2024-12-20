@@ -1,5 +1,5 @@
 import { CONTRACT_CREATION_LEDGER, HORIZON_URL, POOL_ID } from "./configuration";
-import { Horizon, NotFoundError, SorobanRpc, humanizeEvents, xdr } from "@stellar/stellar-sdk";
+import { Horizon, NotFoundError, rpc as SorobanRpc, humanizeEvents, xdr } from "@stellar/stellar-sdk";
 import { insertBorrowers, readLastSyncedLedger, updateLastSyncedLedger } from "./infrastructure/db/domain";
 import { delay } from "./infrastructure/soroban/contracts";
 

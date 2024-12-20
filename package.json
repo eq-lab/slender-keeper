@@ -9,7 +9,7 @@
     "build": "tsc"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^12.1.0",
+    "@stellar/stellar-sdk": "^13.1.0",
     "better-sqlite3": "^8.6.0",
     "bigint-conversion": "^2.4.3",
     "dotenv": "^16.4.5",

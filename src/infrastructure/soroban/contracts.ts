@@ -1,4 +1,4 @@
-import { Address, BASE_FEE, Contract, Keypair, SorobanRpc, TimeoutInfinite, TransactionBuilder, xdr } from "@stellar/stellar-sdk";
+import { Address, BASE_FEE, Contract, Keypair, rpc as SorobanRpc, TimeoutInfinite, TransactionBuilder, xdr } from "@stellar/stellar-sdk";
 import { promisify } from "util";
 
 import { PoolAccountPosition, PoolReserveData, ReserveData } from "./types";
